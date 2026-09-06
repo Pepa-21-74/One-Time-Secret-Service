@@ -1,0 +1,1 @@
+CREATE DATABASE secrets_test;

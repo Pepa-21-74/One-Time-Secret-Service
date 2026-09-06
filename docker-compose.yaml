@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: one-time-secret-postgres
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "8291:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql
+
+volumes:
+  postgres_data:
+
