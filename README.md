@@ -10,7 +10,7 @@ Inspired by services like onetimesecret.com — built as a learning project to p
 - **Optional password protection** — a secret can additionally be protected with a password (stored as a bcrypt hash, never in plain text).
 - **One-time read** — a secret is marked as viewed on first successful read and can never be retrieved again.
 - **Race-condition safe** — concurrent reads of the same secret are protected with `SELECT ... FOR UPDATE`, so two simultaneous requests can't both "win" a read.
-- **Brute-force protection** — failed password attempts are rate-limited per client (IP, or the secret ID itself as a fallback). After repeated lockout cycles, the secret is burned entirely so it can't be brute-forced indefinitely.
+- **Brute-force protection** — failed password attempts are rate-limited per client (IP, or the secret ID itself as a fallback). 
 - **Alembic migrations** for schema versioning.
 - **Integration tests** with pytest + httpx, running against a real Postgres instance.
 
