@@ -6,11 +6,12 @@ Inspired by services like onetimesecret.com — built as a learning project to p
 
 ## Features
 
-- **Encrypt-at-rest** — secret payload is encrypted with Fernet (symmetric encryption) before being stored.
+- **Encrypt-at-rest** — the secret payload is encrypted with Fernet (symmetric encryption) before being stored.
 - **Optional password protection** — a secret can additionally be protected with a password (stored as a bcrypt hash, never in plain text).
 - **One-time read** — a secret is marked as viewed on first successful read and can never be retrieved again.
 - **Race-condition safe** — concurrent reads of the same secret are protected with `SELECT ... FOR UPDATE`, so two simultaneous requests can't both "win" a read.
-- **Brute-force protection** — failed password attempts are rate-limited per client (IP, or the secret ID itself as a fallback). 
+- **Brute-force protection** — after 5 failed password attempts, the client (IP, or the record ID as a fallback) is blocked for 5 minutes.
+- **No information leak** — a missing secret, an already viewed secret, and a missing password all return the same `403` message.
 - **Alembic migrations** for schema versioning.
 - **Integration tests** with pytest + httpx, running against a real Postgres instance.
 
@@ -28,15 +29,16 @@ Inspired by services like onetimesecret.com — built as a learning project to p
 ```
 .
 ├── alembic/              # migration scripts
-├── models/                # SQLAlchemy ORM models
-├── repository/            # data access layer (no business logic, no commits)
-├── router/                # HTTP layer — request/response only
-├── schemas/                # Pydantic request/response schemas
-├── services/                # business logic (rate limiting, orchestration)
+├── models/               # SQLAlchemy ORM models
+├── repository/           # data access layer (queries and commits, no HTTP logic)
+├── router/               # HTTP layer — request/response only
+├── schemas/              # Pydantic request/response schemas
+├── services/             # business logic (rate limiting)
 ├── tests/                # integration tests
-├── database.py            # engine/session setup
-├── security.py             # encryption, hashing, token generation
+├── database.py           # engine/session setup
+├── security.py           # encryption, hashing, token generation
 ├── docker-compose.yaml
+├── init-test-db.sql      # creates the test database on first Postgres start
 ├── alembic.ini
 └── main.py
 ```
@@ -57,11 +59,15 @@ Inspired by services like onetimesecret.com — built as a learning project to p
    cd <repo-name>
    ```
 
-2. Copy `.env.example` to `.env` and fill in the values:
+2. Create a `.env` file in the project root:
 
-   ```bash
-   cp .env.example .env
+   ```env
+   DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:8291/postgres
+   DATABASE_URL_TEST=postgresql+asyncpg://postgres:postgres@localhost:8291/secrets_test
+   ENCRYPTION_KEY=any-long-random-string
    ```
+
+   `ENCRYPTION_KEY` is hashed into a Fernet key, so any sufficiently long random string works. Keep it safe: if it changes, existing secrets can no longer be decrypted.
 
 3. Start Postgres:
 
@@ -82,11 +88,12 @@ Inspired by services like onetimesecret.com — built as a learning project to p
    ```
 
 6. Run the server:
+
    ```bash
    uvicorn main:app --reload
    ```
 
-API docs available at `http://localhost:8000/docs`.
+API docs are available at `http://localhost:8000/docs`.
 
 ## API Endpoints
 
@@ -111,7 +118,7 @@ Returns:
 
 ### `POST /keys/secrets/{secret_key}/reveal`
 
-Read and permanently consume a secret.
+Read and permanently consume a secret. The body is only needed for password-protected secrets.
 
 ```json
 { "password": "optional-password" }
@@ -123,21 +130,28 @@ Returns:
 { "secret": "my-sensitive-value" }
 ```
 
-Returns `403` if the secret doesn't exist, was already viewed, or the password is wrong. Returns `429` if the client has exceeded the allowed number of password attempts.
+Returns `403` in all failure cases:
+
+| Case | `detail` |
+| --- | --- |
+| Secret doesn't exist, was already viewed, or a password is required but not sent | `Secret not found or already view` |
+| Wrong password | `Incorrect password` |
+| Too many failed attempts (5 per client, blocked for 5 minutes) | `Too many attempts. Enter the password in 5 minutes.` |
 
 ## Running Tests
 
 Tests run against a separate Postgres database (not your dev database).
 
-1. Create a test database inside the same Postgres container:
+1. The `secrets_test` database is created automatically by `init-test-db.sql` when the Postgres container starts for the first time. If your container was created earlier, create it manually:
 
    ```bash
    docker compose exec postgres psql -U postgres -c "CREATE DATABASE secrets_test;"
    ```
 
-2. Set `DATABASE_URL_TEST` in `.env` (see `.env.example`).
+2. Make sure `DATABASE_URL_TEST` is set in `.env` (see above).
 
 3. Run:
+
    ```bash
    pytest -v
    ```
